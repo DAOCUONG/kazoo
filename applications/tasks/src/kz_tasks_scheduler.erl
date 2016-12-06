@@ -12,6 +12,7 @@
 %%% Public API
 -export([start_link/0]).
 -export([start/1
+        ,restart/1
         ,remove/1
         ]).
 
@@ -84,6 +85,15 @@ start_link() ->
                                    }.
 start(TaskId=?NE_BINARY) ->
     gen_server:call(?SERVER, {'start_task', TaskId}).
+
+-spec restart(kz_tasks:task_id()) -> {'ok', kz_json:object()} |
+                                     {'error'
+                                     ,'not_found' |
+                                      'already_started' |
+                                      any()
+                                     }.
+restart(TaskId = ?NE_BINARY) ->
+    gen_server:call(?SERVER, {'restart_task', TaskId}).
 
 %%--------------------------------------------------------------------
 %% @public
@@ -233,9 +243,22 @@ handle_call({'start_task', TaskId}, _From, State) ->
             end;
         [#{started := Started}]
           when Started /= 'undefined' ->
+            lager:info("task ~s exists already", [TaskId]),
             ?REPLY(State, {'error', 'already_started'})
     end;
-
+handle_call({'restart_task', TaskId}, _From, State) ->
+    lager:debug("attempted to restart ~s", [TaskId]),
+    case task_by_id(TaskId, State) of
+        [] ->
+            case kz_tasks:task_by_id(TaskId) of
+                [] -> ?REPLY_NOT_FOUND(State);
+                [Task] -> handle_call_start_task(Task#{finished=>'undefined'}, State)
+            end;
+        [#{started := Started}]
+          when Started /= 'undefined' ->
+            lager:info("task ~s exists already", [TaskId]),
+            ?REPLY(State, {'error', 'already_started'})
+    end;
 %% This used to be cast but would race with worker process' EXIT signal.
 handle_call({'worker_finished', TaskId, TotalSucceeded, TotalFailed}, _From, State) ->
     lager:debug("worker finished ~s: ~p/~p", [TaskId, TotalSucceeded, TotalFailed]),
@@ -390,9 +413,11 @@ log_elapsed_time(#{started := Start
 -spec handle_call_start_task(kz_tasks:task(), state()) -> ?REPLY(state(), Response) when
       Response :: {'ok', kz_json:object()} |
                   {'error', any()}.
-handle_call_start_task(#{finished := Finished
+handle_call_start_task(#{id:=_Id
+                        ,finished := Finished
                         }, State)
   when Finished /= 'undefined' ->
+    lager:debug("task ~s in a finished state: ~p", [_Id, Finished]),
     ?REPLY(State, {'error', 'already_started'});
 handle_call_start_task(Task=#{id := TaskId
                              ,account_id := AccountId

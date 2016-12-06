@@ -34,8 +34,9 @@
                ,auth_account_id :: api_binary()
                ,bulk_limit = 500 :: non_neg_integer()
                ,processed_rows = 0 :: non_neg_integer()
-               ,acc = [] :: api_list()
+               ,acc = [] :: ne_binaries() | kz_json:objects()
                }).
+-type state() :: #state{}.
 
 %%%===================================================================
 %%% API
@@ -92,7 +93,8 @@ account_id(_) -> 'false'.
 %%% Appliers
 
 -spec import(kz_proplist(), task_iterator(), api_binary(), api_binary(),
-             api_binary(), api_binary(), api_binary(), api_binary()) -> task_return().
+             api_binary(), api_binary(), api_binary(), api_binary()
+            ) -> {task_return(), state()}.
 import(Props, 'init', Name, Selector, Resource, Value, Start, Stop) ->
     kz_datamgr:suppress_change_notice(),
     State = #state{db = get_selectors_db(Props)
@@ -120,7 +122,7 @@ import(_Props, State, _Name, _Selector, _Resource, _Value, _Start, _Stop) ->
     lager:error("wrong state: ~p",[State]),
     'stop'.
 
--spec delete(kz_proplists(), task_iterator(), api_binary(), api_binary(), api_binary()) -> task_return().
+-spec delete(kz_proplists(), task_iterator(), api_binary(), api_binary(), api_binary()) -> {task_return(), state()} | 'stop'.
 delete(Props, 'init', Name, Selector, Resource) ->
     kz_datamgr:suppress_change_notice(),
     State = #state{db = get_selectors_db(Props)
@@ -172,7 +174,7 @@ do_insert(Db, Docs) ->
         {'error', E} -> lager:error("error adding selectors: ~p",[E])
     end.
 
--spec do_delete(api_binary(), api_list()) -> 'ok'.
+-spec do_delete(api_binary(), ne_binaries()) -> 'ok'.
 do_delete(_Db, []) -> 'ok';
 do_delete(Db, DelKeys) ->
     BulkLimit = kz_datamgr:max_bulk_insert(),
@@ -228,6 +230,10 @@ refresh_selectors_index(Db) ->
     {'ok', _} = kz_datamgr:get_results(Db, <<"resource_selectors/resource_name_selector_listing">>, [{'limit', 1}]),
     'ok'.
 
+-spec generate_selector_doc(ne_binary(), api_binary(), api_binary(), api_binary()
+                           ,api_binary(), api_binary(), api_binary()
+                           ) ->
+                                   kz_json:object().
 generate_selector_doc(AuthAccountId, Resource, Name, Selector, Value, Start, Stop) ->
     Props = [{<<"pvt_type">>, <<"resource_selector">>}
             ,{<<"name">>, Name}
@@ -241,6 +247,7 @@ generate_selector_doc(AuthAccountId, Resource, Name, Selector, Value, Start, Sto
             ],
     kz_json:from_list(props:filter_undefined(Props)).
 
+-spec init_db(ne_binary()) -> 'ok'.
 init_db(Db) when is_binary(Db) ->
     _ = kz_datamgr:db_create(Db),
     {'ok', _} = kz_datamgr:revise_doc_from_file(Db, 'crossbar', "views/resource_selectors.json"),

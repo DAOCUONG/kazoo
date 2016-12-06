@@ -57,6 +57,7 @@
 -export_type([task_id/0
              ,input/0
              ,help_error/0
+             ,task/0
              ]).
 
 -define(API_MANDATORY, <<"mandatory">>).

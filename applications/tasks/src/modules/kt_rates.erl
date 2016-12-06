@@ -116,7 +116,8 @@ export(Props, 'init') ->
         'true' -> State = [{'db', get_ratedeck_db(Props)}
                           ,{'options', [{'limit', ?BULK_LIMIT + 1}
                                        ,'include_docs'
-                                       ]}
+                                       ]
+                           }
                           ],
                   export(Props, State);
         'false' ->
@@ -139,7 +140,8 @@ export(_Props, State) ->
             Rows = [to_csv_row(R) || R <- Head],
             NewOptions = [{'startkey', kz_json:get_value(<<"key">>, Last)}
                          ,{'startkey_docid', kz_json:get_value(<<"id">>, Last)}
-                          | props:delete_keys(['startkey', 'startkey_docid'], Options)],
+                          | props:delete_keys(['startkey', 'startkey_docid'], Options)
+                         ],
             NewState = props:set_value('options', NewOptions, State),
             {Rows, NewState};
         {'ok', Results} ->
@@ -171,14 +173,19 @@ import(Props, State, ?VARS) ->
     Count = props:get_value('count', State) + 1,
     JObj = generate_row([?VARS], Props),
     Docs = props:get_value('docs', State),
-    NewDocs = case Count rem Limit =:= 0 of
-                  'true' ->
+    NewDocs = case Count rem Limit of
+                  0 ->
                       Db = props:get_value('db', State),
                       save_rates(Db, [JObj | Docs]),
                       [];
-                  'false' -> [JObj | Docs]
+                  _Rem -> [JObj | Docs]
               end,
-    {[], props:set_values([{'count', Count}, {'docs', NewDocs}], State)}.
+    {[], props:set_values([{'count', Count}
+                          ,{'docs', NewDocs}
+                          ]
+                         ,State
+                         )
+    }.
 
 -spec delete(kz_proplist(), task_iterator(), ?SPEC_FIELDS) -> task_iterator().
 delete(Props, 'init', ?VARS) ->
@@ -210,13 +217,25 @@ delete(Props, State, ?VARS) ->
     DictRow = props:filter_undefined(props:set_values(Update, Row)),
     Dict = dict:append(P, DictRow, props:get_value('dict', State)),
     Keys = [P | props:get_value('keys', State)],
-    case Count rem Limit =:= 0 of
-        'true' ->
+    case Count rem Limit of
+        0 ->
             Db = props:get_value('db', State),
             delete_rates(Db, Keys, Dict),
-            {[], props:set_values([{'count', Count}, {'keys', []}, {'dict', dict:new()}], State)};
-        'false' ->
-            {[], props:set_values([{'count', Count}, {'keys', Keys}, {'dict', Dict}], State)}
+            {[], props:set_values([{'count', Count}
+                                  ,{'keys', []}
+                                  ,{'dict', dict:new()}
+                                  ]
+                                 ,State
+                                 )
+            };
+        _Rem ->
+            {[], props:set_values([{'count', Count}
+                                  ,{'keys', Keys}
+                                  ,{'dict', Dict}
+                                  ]
+                                 ,State
+                                 )
+            }
     end.
 
 -spec cleanup(ne_binary(), any()) -> any().
@@ -287,7 +306,9 @@ generate_row([?VARS], Props) ->
 -spec save_rates(ne_binary(), kz_json:objects()) -> 'ok'.
 save_rates(Db, Docs) ->
     case kz_datamgr:save_docs(Db, Docs) of
-        {'ok', _Result} -> refresh_selectors_index(Db);
+        {'ok', _Result} ->
+            lager:debug("saved ~p docs to ~s", [length(Docs), Db]),
+            refresh_selectors_index(Db);
         {'error', 'not_found'} ->
             init_db(Db),
             save_rates(Db, Docs);

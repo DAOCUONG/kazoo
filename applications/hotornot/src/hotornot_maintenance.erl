@@ -27,13 +27,28 @@
 
 -spec local_summary() -> 'ok'.
 local_summary() ->
-    io:format("use rates_for_did/1 to see what rates would be used for a DID").
+    io:format("use rates_for_did/1 to see what rates would be used for a DID~n").
 
--spec trie_rebuild() -> {'ok', pid()} | {'error', any()}.
+-spec trie_rebuild() -> 'ok'.
+-spec wait_for_rebuild(pid(), reference()) -> 'ok'.
 trie_rebuild() ->
     case hon_util:use_trie() of
-        'true' -> hon_trie:rebuild();
-        'false' -> {'error', 'trie_not_enabled'}
+        'true' ->
+            {'ok', Pid} = hon_trie:rebuild(),
+            wait_for_rebuild(Pid, erlang:monitor('process', Pid));
+        'false' ->
+            io:format("trie usage is not configured~n")
+    end.
+
+wait_for_rebuild(Pid, Ref) ->
+    receive
+        {'DOWN', Ref, 'process', Pid, 'normal'} ->
+            io:format("trie has been rebuilt successfully~n");
+        {'DOWN', Ref, 'process', Pid, _Reason} ->
+            io:format("trie failed to be rebuilt in ~p: ~p~n", [Pid, _Reason])
+    after
+        10000 ->
+            io:format("trie failed to build in ~p under 10s~n", [Pid])
     end.
 
 -spec rates_for_did(ne_binary()) -> 'ok'.

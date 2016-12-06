@@ -13,7 +13,7 @@
         ,authorize/1
         ,allowed_methods/0, allowed_methods/1, allowed_methods/2
         ,resource_exists/0, resource_exists/1, resource_exists/2
-        ,content_types_accepted/2
+        ,content_types_accepted/1, content_types_accepted/2
         ,content_types_provided/3
         ,validate/1, validate/2, validate/3
         ,put/1
@@ -134,7 +134,11 @@ resource_exists(_TaskId, ?CSV_IN) -> 'true'.
 %% Of the form {atom(), [{Type, SubType}]} :: {to_json, [{<<"application">>, <<"json">>}]}
 %% @end
 %%--------------------------------------------------------------------
+-spec content_types_accepted(cb_context:context()) -> cb_context:context().
 -spec content_types_accepted(cb_context:context(), path_token()) -> cb_context:context().
+content_types_accepted(Context) ->
+    cta(Context, cb_context:req_verb(Context)).
+
 content_types_accepted(Context, _TaskId) ->
     cta(Context, cb_context:req_verb(Context)).
 
@@ -199,7 +203,8 @@ validate_tasks(Context, ?HTTP_PUT) ->
          ,kz_json:get_ne_binary_value(?QS_ACTION, QS)
          }
     of
-        {?NE_BINARY, ?NE_BINARY} ->
+        {?NE_BINARY=_Cat, ?NE_BINARY=_Act} ->
+            lager:debug("validating doing '~s' on cat '~s'", [_Cat, _Act]),
             validate_new_attachment(Context, is_content_type_csv(Context));
         {_, _} -> cb_context:add_system_error('invalid request', Context)
     end.
@@ -225,6 +230,7 @@ validate_new_attachment(Context, 'true') ->
     CSVBinary = kz_json:get_value(<<"contents">>, FileJObj),
     case kz_csv:count_rows(CSVBinary) of
         0 ->
+            lager:debug("failed to count rows in the CSV"),
             Msg = kz_json:from_list([{<<"message">>, <<"Empty CSV or some row(s) longer than others or header missing">>}
                                     ]),
             cb_context:add_validation_error(<<"csv">>, <<"format">>, Msg, Context);
@@ -265,7 +271,7 @@ put(Context) ->
     TotalRows = cb_context:fetch(Context, 'total_rows'),
     CSVName = cb_context:req_value(Context, ?RV_FILENAME),
     case kz_tasks:new(cb_context:auth_account_id(Context)
-                     ,cb_context:account_id(Context)
+                     ,task_account_id(Context)
                      ,Category
                      ,Action
                      ,TotalRows
@@ -282,6 +288,13 @@ put(Context) ->
         {'error', Reason} ->
             lager:debug("new ~s task ~s cannot be created: ~p", [Category, Action, Reason]),
             crossbar_util:response_400(<<"bad request">>, Reason, Context)
+    end.
+
+-spec task_account_id(cb_context:context()) -> api_ne_binary().
+task_account_id(Context) ->
+    case cb_context:account_id(Context) of
+        'undefined' -> cb_context:auth_account_id(Context);
+        AccountId -> AccountId
     end.
 
 %%--------------------------------------------------------------------
