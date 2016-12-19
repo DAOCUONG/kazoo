@@ -195,12 +195,11 @@ validate_number(Phonenumber, Context) ->
         'true' ->
             rate_for_number(knm_converters:normalize(Phonenumber), Context);
         'false' ->
-            cb_context:add_validation_error(
-              <<"number format">>
+            cb_context:add_validation_error(<<"number format">>
                                            ,<<"error">>
                                            ,kz_json:from_list([{<<"message">>, <<"Number is un-rateable">>}])
                                            ,Context
-             )
+                                           )
     end.
 
 %%%===================================================================
@@ -446,7 +445,7 @@ process_row(Row, {Count, JObjs}=Acc) ->
                       ,{<<"pvt_rate_surcharge">>, get_row_internal_surcharge(Row)}
                       ,{<<"routes">>, [<<"^\\+", (kz_util:to_binary(Prefix))/binary, "(\\d*)$">>]}
                       ,{<<"options">>, []}
-                      ]),
+                                         ]),
 
             {Count + 1, [kz_json:from_list(Props) | JObjs]}
     end.
