@@ -55,16 +55,23 @@ count_rows(CSV) when is_binary(CSV) ->
         'throw':'bad_csv' -> 0
     end.
 
+-spec throw_bad(row(), {integer(), non_neg_integer()}) -> {integer(), non_neg_integer()}.
 throw_bad(Header, {-1,0}) ->
     case lists:all(fun is_binary/1, Header) of
         %% Strip header line from total rows count
-        'true' -> {length(Header), 0};
-        'false' -> throw('bad_csv')
+        'true' ->
+            io:format("header: ~p~n", [length(Header)]),
+            {length(Header), 0};
+        'false' ->
+            io:format("bad header: ~p~n", [Header]),
+            throw('bad_csv')
     end;
 throw_bad(Row, {MaxRow,RowsCounted}) ->
     case length(Row) of
         MaxRow -> {MaxRow, RowsCounted+1};
-        _ -> throw('bad_csv')
+        _ ->
+            io:format("bad row: ~p~n", [Row]),
+            throw('bad_csv')
     end.
 
 %%--------------------------------------------------------------------
@@ -73,8 +80,7 @@ throw_bad(Row, {MaxRow,RowsCounted}) ->
 %% @end
 %%--------------------------------------------------------------------
 -type folder(T) :: fun((row(), T) -> T).
--spec fold(CSV, folder(T), T) -> T when
-      CSV :: binary(),
+-spec fold(binary(), folder(T), T) -> T when
       T :: any().
 fold(CSV, Fun, Acc)
   when is_binary(CSV), is_function(Fun, 2) ->
@@ -90,9 +96,8 @@ fold(CSV, Fun, Acc)
 %% @doc
 %% @end
 %%--------------------------------------------------------------------
--spec take_row(CSV) -> {row(), CSV} |
-                       'eof' when
-      CSV :: binary().
+-spec take_row(binary()) -> {row(), binary()} |
+                            'eof'.
 take_row(<<>>) -> 'eof';
 take_row(CSV=?NE_BINARY) ->
     case binary:split(CSV, [<<"\r\n">>, <<"\n\r">>, <<"\r\r">>, <<"\n">>, <<"\r">>]) of
@@ -110,12 +115,36 @@ take_row(CSV=?NE_BINARY) ->
 %%--------------------------------------------------------------------
 -spec split_row(ne_binary()) -> row().
 split_row(Row=?NE_BINARY) ->
-    [case Cell of
-         <<>> -> ?ZILCH;
-         _ -> Cell
-     end
-     || Cell <- binary:split(Row, <<$,>>, ['global'])
-    ].
+    split_fields(Row, []).
+
+split_fields(<<>>, Fields) ->
+    lists:reverse(Fields);
+split_fields(<<$\n, _/binary>>, Fields) ->
+    lists:reverse(Fields);
+split_fields(<<$", Row/binary>>, Fields) ->
+    split_field(Row, $", Fields);
+split_fields(<<$', Row/binary>>, Fields) ->
+    split_field(Row, $', Fields);
+split_fields(Row, Fields) ->
+    split_field(Row, $,, Fields).
+
+split_field(Row, EndChar, Fields) ->
+    split_field(Row, EndChar, Fields, []).
+
+split_field(<<$,, Row/binary>>, $,, Fields, FieldSoFar) ->
+    split_fields(Row, [iolist_to_binary(lists:reverse(FieldSoFar)) | Fields]);
+split_field(<<EndChar, $,, Row/binary>>, EndChar, Fields, FieldSoFar) ->
+    Field = iolist_to_binary([EndChar | lists:reverse([EndChar | FieldSoFar])]),
+    split_fields(Row, [Field | Fields]);
+
+split_field(<<>>, $,, Fields, FieldSoFar) ->
+    split_fields(<<>>, [iolist_to_binary(lists:reverse(FieldSoFar)) | Fields]);
+split_field(<<EndChar>>, EndChar, Fields, FieldSoFar) ->
+    Field = iolist_to_binary([EndChar | lists:reverse([EndChar | FieldSoFar])]),
+    split_fields(<<>>, [Field | Fields]);
+
+split_field(<<Char:1/binary, Row/binary>>, EndChar, Fields, FieldSoFar) ->
+    split_field(Row, EndChar, Fields, [Char | FieldSoFar]).
 
 %%--------------------------------------------------------------------
 %% @public
@@ -298,5 +327,18 @@ json_to_iolist_test_() ->
     ,?_assertEqual(<<"field1,field deux\n,QUUX\n,\nr'bla.+\\n',\n">>, json_to_iolist(Records2))
     ,?_assertEqual(<<"account_id,e164,cnam.outbound\n009afc511c97b2ae693c6cc4920988e8,+14157215234,me\n,+14157215235,\n">>, json_to_iolist(Records3))
     ].
+
+split_test() ->
+    Rows = [{<<"\"0.1651\",\"ZAMBIA, MOBILE\",\"ZAMBIA, MOBILE-26094\",\"ZAMBIA, MOBILE\",\"26094\",\"0\"">>
+            ,[<<"\"0.1651\"">>, <<"\"ZAMBIA, MOBILE\"">>, <<"\"ZAMBIA, MOBILE-26094\"">>, <<"\"ZAMBIA, MOBILE\"">>, <<"\"26094\"">>, <<"\"0\"">>]
+            }
+           ,{<<"\"0.1651\",\"ZAMBIA, MOBILE\",\"ZAMBIA, MOBILE-26094\",\"ZAMBIA, MOBILE\",\"26094\",0">>
+            ,[<<"\"0.1651\"">>, <<"\"ZAMBIA, MOBILE\"">>, <<"\"ZAMBIA, MOBILE-26094\"">>, <<"\"ZAMBIA, MOBILE\"">>, <<"\"26094\"">>, <<"0">>]
+            }
+           ,{<<"0.1651,\"ZAMBIA, MOBILE\",\"ZAMBIA, MOBILE-26094\",\"ZAMBIA, MOBILE\",\"26094\",\"0\"">>
+            ,[<<"0.1651">>, <<"\"ZAMBIA, MOBILE\"">>, <<"\"ZAMBIA, MOBILE-26094\"">>, <<"\"ZAMBIA, MOBILE\"">>, <<"\"26094\"">>, <<"\"0\"">>]
+            }
+           ],
+    [?assertEqual(Split, split_row(Row)) || {Row, Split} <- Rows].
 
 -endif.
