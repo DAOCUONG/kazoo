@@ -203,6 +203,13 @@ group_by_db(Nums) ->
         end,
     maps:to_list(lists:foldl(F, #{}, Nums)).
 
+split_by_db(PNs) ->
+    F = fun (PN, M) ->
+                Key = knm_converters:to_db(number(PN)),
+                M#{Key => [PN | maps:get(Key, M, [])]}
+        end,
+    maps:to_list(lists:foldl(F, #{}, PNs)).
+
 -ifdef(TEST).
 fetch(Num, Options) ->
     case test_fetch(Num) of
@@ -288,7 +295,7 @@ save(T0=#{todo := PNs, options := Options}) ->
             lists:foldl(F, T0, PNs)
     end;
 save(#knm_phone_number{is_dirty = false}=PhoneNumber) ->
-    lager:debug("not dirty: skip saving ~s", [number(PhoneNumber)]),
+    lager:debug("not dirty, skip saving ~s", [number(PhoneNumber)]),
     PhoneNumber;
 save(PhoneNumber) ->
     Routines = [fun save_to_number_db/1
