@@ -7,10 +7,12 @@
             "description": "kazoo_endpoint custom sip interface"
         },
         "default_caller_id_name": {
+            "default": "anonymous",
             "description": "kazoo_endpoint default caller id name",
             "type": "string"
         },
         "default_caller_id_number": {
+            "default": "0000000000",
             "description": "kazoo_endpoint default caller id number",
             "type": "string"
         },
@@ -35,8 +37,6 @@
     },
     "required": [
         "custom_sip_interface",
-        "default_caller_id_name",
-        "default_caller_id_number",
         "sip_transport"
     ],
     "type": "object"
