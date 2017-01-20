@@ -27,8 +27,10 @@ module_ast(M) ->
             {Module, AST}
     end.
 
--spec add_module_ast(module_ast(), module(), {'raw_abstract_v1',ast()}) -> ast().
+-spec add_module_ast(module_ast(), module(), ast() | {'raw_abstract_v1',ast()}) -> module_ast().
 add_module_ast(ModAST, Module, {'raw_abstract_v1', Attributes}) ->
+    add_module_ast(ModAST, Module, Attributes);
+add_module_ast(ModAST, Module, Attributes) ->
     lists:foldl(fun(A, Acc) ->
                         add_module_ast_fold(A, Module, Acc)
                 end
@@ -59,7 +61,7 @@ binary_part_to_binary(?BINARY_STRING(V)) -> V;
 binary_part_to_binary(?SUB_BINARY(V)) -> V;
 binary_part_to_binary(?BINARY_MATCH(Ms)) -> binary_match_to_binary(Ms).
 
--spec schema_path(binary()) -> binary().
+-spec schema_path(binary()) -> file:filename_all().
 schema_path(Base) ->
     filename:join([code:priv_dir('crossbar')
                   ,<<"couchdb">>
@@ -67,7 +69,7 @@ schema_path(Base) ->
                   ,Base
                   ]).
 
--spec api_path(binary()) -> binary().
+-spec api_path(binary()) -> file:filename_all().
 api_path(Base) ->
     filename:join([code:priv_dir('crossbar')
                   ,<<"api">>
